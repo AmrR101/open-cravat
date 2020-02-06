@@ -200,7 +200,7 @@ class FileRouter(object):
         return log_path
 
 class WebJob(object):
-    def __init__(self, job_dir, job_status_fpath):
+    def __init__(self, job_dir, job_status_fpath, job_id=None):
         self.info = {}
         self.info['orig_input_fname'] = ''
         self.info['assembly'] = ''
@@ -215,7 +215,10 @@ class WebJob(object):
         self.info['submission_time'] = ''
         self.job_dir = job_dir
         self.job_status_fpath = job_status_fpath
-        self.info['id'] = os.path.basename(job_dir)
+        if job_id is not None:
+            self.info['id'] = job_id
+        else:
+            self.info['id'] = os.path.basename(job_dir)
 
     def save_job_options (self, job_options):
         self.set_values(**job_options)
@@ -414,21 +417,21 @@ async def get_job (request, job_id):
     global filerouter
     job_dir = await filerouter.job_dir(request, job_id)
     if os.path.exists(job_dir) == False:
-        job = WebJob(job_dir, None)
+        job = WebJob(job_dir, None, job_id)
         job.info['status'] = 'Error'
         return job
     if os.path.isdir(job_dir) == False:
-        job = WebJob(job_dir, None)
+        job = WebJob(job_dir, None, job_id)
         job.info['status'] = 'Error'
         return job
     fns = find_files_by_ending(job_dir, '.status.json')
     if len(fns) < 1:
-        job = WebJob(job_dir, None)
+        job = WebJob(job_dir, None, job_id)
         job.info['status'] = 'Error'
         return job
     status_fname = fns[0]
     status_fpath = os.path.join(job_dir, status_fname)
-    job = WebJob(job_dir, status_fpath)
+    job = WebJob(job_dir, status_fpath, job_id=job_id)
     job.read_info_file()
     fns = find_files_by_ending(job_dir, '.info.yaml')
     if len(fns) > 0:
@@ -475,6 +478,8 @@ async def get_job (request, job_id):
                 existing_reports.append(report_type)
     job.set_info_values(reports=existing_reports)
     job.info['username'] = os.path.basename(os.path.dirname(job_dir))
+    job.id = job_id
+    job.info['id'] = job_id
     return job
 
 async def get_jobs (request):
@@ -496,7 +501,8 @@ async def get_jobs (request):
         except:
             traceback.print_exc()
             continue
-    return web.json_response([job.get_info_dict() for job in jobs])
+    data = [job.get_info_dict() for job in jobs]
+    return web.json_response(data)
 
 async def get_all_jobs (request):
     global servermode
@@ -516,7 +522,8 @@ async def get_all_jobs (request):
         direntries = [de for de in dir_it]
         de_names = []
         for it in direntries:
-            de_names.append(it.name)
+            if os.path.isdir(os.path.join(jobs_dir, it)):
+                de_names.append(it.name)
         all_jobs.extend(de_names)
     all_jobs.sort(reverse=True)
     return web.json_response(all_jobs)
